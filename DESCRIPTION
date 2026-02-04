@@ -1,0 +1,41 @@
+Package: objectExplorerR
+Title: Interactive Shiny Explorer for Ontology Objects
+Version: 0.1.0
+Authors@R:
+    person("Cathal", "Byrne", role = c("aut", "cre"),
+           email = "cathalbyrne@example.com")
+Description: A Shiny-based interactive explorer for ontology objects defined
+    by ontologySpecR. Users can search, filter, traverse links, and inspect
+    ontology objects visually without writing code. Supports auto-generated
+    filters from property types, link traversal for relationship navigation,
+    and optional integration with actionTypesR and vertexR for actions and
+    graph visualization.
+License: MIT + file LICENSE
+URL: https://github.com/CathalByrneGit/objectExplorerR
+BugReports: https://github.com/CathalByrneGit/objectExplorerR/issues
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+Depends:
+    R (>= 3.6)
+Imports:
+    ontologySpecR,
+    DBI,
+    shiny (>= 1.7.0),
+    DT,
+    dplyr,
+    rlang,
+    jsonlite
+Suggests:
+    duckdb,
+    RSQLite,
+    objectSetsR,
+    actionTypesR,
+    vertexR,
+    visNetwork,
+    bslib,
+    testthat (>= 3.0.0),
+    knitr,
+    rmarkdown
+Config/testthat/edition: 3
+VignetteBuilder: knitr

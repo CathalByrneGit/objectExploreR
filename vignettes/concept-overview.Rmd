@@ -1,0 +1,250 @@
+---
+title: "objectExplorerR: Interactive Ontology Object Explorer"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{objectExplorerR: Interactive Ontology Object Explorer}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+## Overview
+
+`objectExplorerR` is the first interactive user-facing application in the
+ontology R ecosystem. It provides a Shiny-based exploratory UI that lets
+users search, filter, traverse links, and inspect ontology objects
+visually — without writing code.
+
+This corresponds to Palantir's Object Explorer concept: visual query
+composition and exploration views with relationship navigation.
+
+## Quick Start
+
+```{r launch-example, eval=FALSE}
+library(ontologySpecR)
+library(objectExplorerR)
+library(DBI)
+
+# Load an ontology bundle
+b <- read_bundle("path/to/your-bundle.json")
+
+# Connect to your database
+con <- dbConnect(RSQLite::SQLite(), "your-database.db")
+
+# Launch the explorer
+explore_ontology(b, con)
+```
+
+## Setup with the Aviation Demo
+
+The ontologySpecR package ships with an aviation demo bundle:
+
+```{r setup-demo, eval=TRUE}
+library(ontologySpecR)
+
+# Read the aviation demo bundle
+b <- read_bundle(system.file("examples", "aviation-demo.json",
+                              package = "ontologySpecR"))
+
+# The bundle defines 3 object types
+cat("Object types:", paste(vapply(b$objects, function(o) o$id, ""), collapse = ", "), "\n")
+
+# And 3 link types
+cat("Link types:", paste(vapply(b$links, function(l) l$id, ""), collapse = ", "), "\n")
+
+# And 1 action type
+cat("Action types:", paste(vapply(b$actions, function(a) a$id, ""), collapse = ", "), "\n")
+```
+
+## Application Layout
+
+The explorer is organized into four main panels:
+
+```
++------------------------------------------------------+
+|  [Object Type Selector]  [Search: ________]  [Refresh]|
++------------------------+-----------------------------+
+|                        |                             |
+|   FILTER PANEL         |    RESULTS TABLE            |
+|                        |                             |
+|  Property filters      |    Interactive DT table     |
+|  (auto-generated       |    with sort, page,         |
+|   from object type     |    select rows              |
+|   properties)          |                             |
+|                        +-----------------------------+
+|  [Apply] [Clear]       |                             |
+|                        |    DETAIL PANEL              |
+|   LINK PANEL           |    (shown when row selected)|
+|                        |                             |
+|  Available links       |    - Properties tab         |
+|  [Traverse ->]         |    - Links tab              |
+|  [<- Search Around]    |    - Actions tab            |
+|                        |    - Graph tab              |
++------------------------+-----------------------------+
+```
+
+### Top Bar: Object Type Selector + Search
+
+The top bar contains a dropdown populated from the bundle's object types
+(using display names), a free-text search box that filters across all
+string properties, and a refresh button.
+
+### Filter Panel (Left Sidebar)
+
+Filters are **auto-generated** from the selected object type's property
+definitions:
+
+| Property Type | Widget                 |
+|--------------|------------------------|
+| `string`     | Text input or dropdown |
+| `integer`    | Range slider           |
+| `number`     | Range slider           |
+| `boolean`    | Checkbox               |
+| `date`       | Date range picker      |
+| `datetime`   | Date range picker      |
+| `json`       | (not filterable)       |
+
+For string properties with few distinct values (< 20), the filter
+automatically uses a dropdown instead of a text input.
+
+Numeric sliders are initialized with the actual min/max from the data.
+
+### Results Table (Main Area)
+
+An interactive DataTable showing filtered objects with sortable columns,
+pagination, and row selection. Clicking a row opens the detail panel.
+
+### Detail Panel (on Row Selection)
+
+The detail panel provides four tabs:
+
+- **Properties**: Key-value display of all properties for the selected object
+- **Links**: Tables of linked objects for each link type, organized by
+  relationship
+- **Actions**: Auto-generated forms for available actions from the bundle
+- **Graph**: Network visualization of the object's neighborhood (requires
+  vertexR + visNetwork)
+
+## Link Traversal: The Key Feature
+
+Link traversal is what makes this an *ontology* explorer, not just a
+database browser. The left sidebar's Link Panel shows all link types
+where the current object type is either the `from` or `to` side.
+
+For example, with the aviation demo:
+
+- Viewing **Airport**: you see incoming links from FlightRoute
+  (RouteOrigin, RouteDestination)
+- Clicking **"<- Search Around"** on RouteOrigin: switches to
+  FlightRoute view, filtered to routes that originate at the selected
+  airport
+- From **FlightRoute**: you see outgoing links to Airport and Airline
+- Clicking **"Traverse ->"** on RouteOperator: switches to Airline view,
+  filtered to the airline operating the selected route
+
+Users navigate relationships naturally, following links across object
+types without writing any queries.
+
+## Optional Integrations
+
+### actionTypesR
+
+If `actionTypesR` is installed, the Actions tab uses its full execution
+engine (`submit_action()`). Without it, actions fall back to directly
+calling handler functions you provide:
+
+```{r action-handlers, eval=FALSE}
+explore_ontology(b, con, action_handlers = list(
+  UpdateAirportStatus = function(conn, action, params, targets) {
+    DBI::dbExecute(conn,
+      "UPDATE airports SET status = ? WHERE airport_id = ?",
+      list(params$new_status, targets[[1]]))
+  }
+))
+```
+
+### vertexR
+
+If `vertexR` and `visNetwork` are installed, the Graph tab shows an
+interactive network visualization of the selected object's neighborhood
+(depth = 1). This uses `vx_neighbors()` and `vx_plot()` from vertexR.
+
+## Module Architecture
+
+The application is built as composable Shiny modules with a clear
+reactive data flow:
+
+```
+type_selector -> selected_object_type_id (reactive)
+    |
+    v
+filter_panel -> active_filters (reactive list)
+    |
+    v
+query_helpers::fetch_objects() -> filtered_data (reactive df)
+    |
+    v
+results_table -> selected_row (reactive)
+    |
+    v
+detail_panel -> properties / links / actions / graph tabs
+    |
+    v
+link_panel -> traverse action -> updates type_selector + filters
+```
+
+Each module is self-contained with its own UI and server functions:
+
+| Module               | Purpose                              |
+|---------------------|--------------------------------------|
+| `mod_type_selector`  | Object type dropdown + search        |
+| `mod_filter_panel`   | Auto-generated property filters      |
+| `mod_results_table`  | Interactive DT results table         |
+| `mod_detail_panel`   | Properties/links/actions/graph tabs  |
+| `mod_link_panel`     | Link traversal controls              |
+| `mod_action_form`    | Action parameter form + submit       |
+
+## Query Helpers
+
+The package includes a `query_helpers.R` module that builds parameterized
+SQL directly from ontologySpecR metadata. This works with any DBI-compatible
+database without requiring objectSetsR:
+
+```{r query-helpers, eval=FALSE}
+# Fetch objects with filters
+data <- fetch_objects(con, airport_type,
+  filters = list(
+    list(property_id = "country", type = "text", value = "United States")
+  ),
+  search_text = "International"
+)
+
+# Fetch linked objects
+linked <- fetch_linked(con, bundle, route_origin_link,
+                        source_object_ids = c("R001"),
+                        direction = "forward")
+
+# Get filter widget data
+countries <- fetch_distinct_values(con, airport_type, "country")
+elev_range <- fetch_range(con, airport_type, "elevation_ft")
+```
+
+## Dependencies
+
+The package requires only three core dependencies beyond base R:
+
+- **ontologySpecR**: Ontology type definitions and bundle I/O
+- **DBI**: Database connectivity
+- **shiny**: Web application framework
+- **DT**: Interactive tables
+- **dplyr**, **rlang**, **jsonlite**: Data manipulation utilities
+
+Optional packages (`actionTypesR`, `vertexR`, `visNetwork`, `bslib`)
+add features but are not required. The explorer works standalone with
+just the core dependencies.
