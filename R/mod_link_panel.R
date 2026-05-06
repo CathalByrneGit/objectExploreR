@@ -41,13 +41,11 @@ link_panel_server <- function(id, bundle, selected_type_id, selected_row,
     nav_target <- shiny::reactiveVal(NULL)
     link_filter <- shiny::reactiveVal(NULL)
 
-    # Current links
     current_links <- shiny::reactive({
       type_id <- shiny::req(selected_type_id())
       find_links_for_type(bundle(), type_id)
     })
 
-    # Render link controls
     output$link_controls <- shiny::renderUI({
       links <- current_links()
       b <- bundle()
@@ -114,7 +112,6 @@ link_panel_server <- function(id, bundle, selected_type_id, selected_row,
       shiny::tagList(widgets)
     })
 
-    # Observe traverse buttons (outgoing)
     shiny::observe({
       links <- current_links()
       for (i in seq_along(links$outgoing)) {
@@ -140,7 +137,6 @@ link_panel_server <- function(id, bundle, selected_type_id, selected_row,
       }
     })
 
-    # Observe traverse buttons (incoming)
     shiny::observe({
       links <- current_links()
       for (i in seq_along(links$incoming)) {
@@ -166,7 +162,6 @@ link_panel_server <- function(id, bundle, selected_type_id, selected_row,
       }
     })
 
-    # Clear link filter
     shiny::observeEvent(input$clear_link_filter, {
       link_filter(NULL)
     })
@@ -189,15 +184,14 @@ get_selected_pk_values <- function(bundle, type_id, selected_row,
   if (length(pk_cols) == 0) return(character(0))
 
   pk_col <- pk_cols[1]
-  col_name <- resolve_property_column(obj_type, pk_col)
 
-  if (!is.null(selected_row) && col_name %in% names(selected_row)) {
-    return(as.character(selected_row[[col_name]]))
+  if (!is.null(selected_row) && pk_col %in% names(selected_row)) {
+    return(as.character(selected_row[[pk_col]]))
   }
 
   if (!is.null(selected_rows) && length(selected_rows) > 0 &&
-      !is.null(data) && nrow(data) > 0 && col_name %in% names(data)) {
-    return(as.character(data[selected_rows, col_name]))
+      !is.null(data) && nrow(data) > 0 && pk_col %in% names(data)) {
+    return(as.character(data[selected_rows, pk_col]))
   }
 
   character(0)

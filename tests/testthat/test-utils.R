@@ -1,6 +1,4 @@
 test_that("display_name returns display name when available", {
-  skip_if_not_installed("ontologySpecR")
-
   obj <- list(
     id = "Airport",
     display = list(name = "Airport Terminal")
@@ -38,15 +36,13 @@ test_that("find_links_for_type finds outgoing and incoming links", {
     system.file("examples", "aviation-demo.json", package = "ontologySpecR")
   )
 
-  # FlightRoute has 3 outgoing links
   result <- find_links_for_type(b, "FlightRoute")
   expect_true(length(result$outgoing) == 3)
   expect_true(length(result$incoming) == 0)
 
-  # Airport has incoming links
   result_airport <- find_links_for_type(b, "Airport")
   expect_true(length(result_airport$outgoing) == 0)
-  expect_true(length(result_airport$incoming) == 2)  # RouteOrigin, RouteDestination
+  expect_true(length(result_airport$incoming) == 2)
 })
 
 test_that("get_object_type finds correct object", {
@@ -74,7 +70,6 @@ test_that("object_type_choices returns named vector", {
   choices <- object_type_choices(b)
   expect_type(choices, "character")
   expect_equal(length(choices), 3)
-  # Values should be IDs
   expect_true("Airport" %in% choices)
   expect_true("Airline" %in% choices)
   expect_true("FlightRoute" %in% choices)

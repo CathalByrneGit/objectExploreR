@@ -1,7 +1,7 @@
 #' Action Form Module
 #'
 #' Shiny module that renders a form for an action type's parameters
-#' and handles submission via actionTypesR.
+#' and handles submission via actionTypesR (preferred) or direct handlers.
 
 #' Action Form UI
 #'
@@ -28,16 +28,16 @@ action_form_ui <- function(id, action) {
 #' @param id Module namespace ID.
 #' @param action An ontologySpecR action_type object.
 #' @param connection The DBI connection object.
-#' @param action_handlers Named list of R handler functions.
+#' @param action_ctx ActionContext from actionTypesR (preferred) or NULL.
+#' @param action_handlers Named list of R handler functions (deprecated fallback).
 #' @param selected_row Reactive expression for the selected row.
 #' @param current_type Reactive expression for the current object type.
 #' @keywords internal
-action_form_server <- function(id, action, connection, action_handlers,
-                                selected_row, current_type) {
+action_form_server <- function(id, action, connection, action_ctx,
+                                action_handlers, selected_row, current_type) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
-    # Render parameter inputs
     output$param_inputs <- shiny::renderUI({
       params <- action$parameters
       if (length(params) == 0) {
@@ -63,13 +63,11 @@ action_form_server <- function(id, action, connection, action_handlers,
       shiny::tagList(inputs)
     })
 
-    # Handle submit
     shiny::observeEvent(input$submit_action, {
       row <- selected_row()
       obj_type <- current_type()
       if (is.null(row) || is.null(obj_type)) return()
 
-      # Collect parameter values
       params <- list()
       for (param in action$parameters) {
         input_id <- paste0("param_", param$id)
@@ -79,35 +77,37 @@ action_form_server <- function(id, action, connection, action_handlers,
         }
       }
 
-      # Get target PK value
       pk_cols <- get_pk_columns(obj_type)
-      pk_col <- if (length(pk_cols) > 0) {
-        property_column(
-          Filter(function(p) p$id == pk_cols[1], obj_type$properties)[[1]]
-        )
+      pk_col <- if (length(pk_cols) > 0) pk_cols[1] else NULL
+      target_ids <- if (!is.null(pk_col) && pk_col %in% names(row)) {
+        list(as.character(row[[pk_col]]))
       } else {
-        NULL
+        list()
       }
-      target_ids <- if (!is.null(pk_col)) list(as.character(row[[pk_col]])) else list()
 
-      # Try actionTypesR first, fall back to direct handler
       result <- tryCatch({
-        if (requireNamespace("actionTypesR", quietly = TRUE)) {
-          ctx <- actionTypesR::action_context(shiny::isolate(shiny::reactiveValuesToList(input)),
-                                               connection)
-          # Register handlers
+        if (!is.null(action_ctx)) {
+          res <- actionTypesR::submit_action(
+            ctx = action_ctx,
+            action_type_id = action$id,
+            params = params,
+            target_ids = target_ids
+          )
+          paste("Action completed:", res$status)
+        } else if (requireNamespace("actionTypesR", quietly = TRUE) &&
+                   length(action_handlers) > 0) {
+          ctx <- actionTypesR::action_context(shiny::isolate(bundle()), connection)
           for (h_name in names(action_handlers)) {
             ctx <- actionTypesR::register_handler(ctx, h_name, action_handlers[[h_name]])
           }
           res <- actionTypesR::submit_action(ctx, action$id, params, target_ids)
           paste("Action completed:", res$status)
         } else if (action$id %in% names(action_handlers)) {
-          # Direct handler execution
           handler <- action_handlers[[action$id]]
           handler(connection, action, params, target_ids)
           "Action executed successfully."
         } else {
-          "No handler registered for this action. Install actionTypesR or provide a handler."
+          "No handler registered for this action. Provide action_ctx or action_handlers."
         }
       }, error = function(e) {
         paste("Error:", e$message)

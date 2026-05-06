@@ -1,12 +1,16 @@
 # Launch the Object Explorer with the aviation demo dataset
 #
 # Prerequisites:
-#   install.packages(c("shiny", "DT", "DBI", "dplyr", "rlang", "jsonlite"))
+#   install.packages(c("shiny", "DT", "DBI", "dplyr", "rlang", "jsonlite", "bslib"))
 #   install.packages("RSQLite")  # or install.packages("duckdb")
 #   remotes::install_github("CathalByrneGit/ontologySpecR")
+#   remotes::install_github("CathalByrneGit/objectSetsR")
+#   remotes::install_github("CathalByrneGit/actionTypesR")
 #   remotes::install_github("CathalByrneGit/objectExplorerR")
 
 library(ontologySpecR)
+library(objectSetsR)
+library(actionTypesR)
 library(objectExplorerR)
 library(DBI)
 
@@ -94,17 +98,19 @@ DBI::dbExecute(con, "
     ('R012', 'SYD', 'SIN', 'QF', 0, 'A330')
 ")
 
-# Define an action handler for UpdateAirportStatus
-handlers <- list(
-  UpdateAirportStatus = function(conn, action, params, targets) {
+# Create ActionContext and register handlers (preferred method)
+action_ctx <- action_context(b, con)
+action_ctx <- register_handler(action_ctx, "UpdateAirportStatus",
+  function(conn, action, params, targets) {
     message("Updating airport status for: ", paste(targets, collapse = ", "))
     message("New status: ", params$new_status)
     # In a real application, this would update a status column:
     # DBI::dbExecute(conn,
     #   "UPDATE airports SET status = ? WHERE airport_id = ?",
     #   list(params$new_status, targets[[1]]))
+    list(status = "success", message = "Status updated")
   }
 )
 
-# Launch the explorer!
-explore_ontology(b, con, action_handlers = handlers)
+# Launch the explorer with ActionContext!
+explore_ontology(b, con, action_ctx = action_ctx)
