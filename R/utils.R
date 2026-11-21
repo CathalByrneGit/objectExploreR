@@ -15,18 +15,6 @@ display_name <- function(obj) {
   if (!is.null(dn) && nzchar(dn)) dn else obj$id
 }
 
-#' Get the column name for a property
-#'
-#' Returns the source column if specified, otherwise falls back to the property id.
-#'
-#' @param prop An ontologySpecR property_def object.
-#' @return A character string.
-#' @keywords internal
-property_column <- function(prop) {
-  col <- prop$source$column
-  if (!is.null(col) && nzchar(col)) col else prop$id
-}
-
 #' Map ontology property type to a Shiny input widget type
 #'
 #' @param prop_type A character string: one of "string", "integer", "number",
@@ -49,7 +37,7 @@ property_type_to_widget <- function(prop_type) {
 
 #' Find all link types connected to an object type
 #'
-#' Iterates through bundle$links and returns links where the given object type
+#' Reads the bundle's link types through ontologySpecR and returns links where the given object type
 #' is either the `from` or `to` side of the link.
 #'
 #' @param bundle An ontologySpecR bundle.
@@ -63,11 +51,12 @@ property_type_to_widget <- function(prop_type) {
 find_links_for_type <- function(bundle, object_type_id) {
   outgoing <- list()
   incoming <- list()
-  for (link in bundle$links) {
-    if (identical(link$from, object_type_id)) {
+  for (link in unname(ontologySpecR::bundle_link_types(bundle))) {
+    ends <- ontologySpecR::link_endpoints(link)
+    if (identical(ends$from, object_type_id)) {
       outgoing <- c(outgoing, list(link))
     }
-    if (identical(link$to, object_type_id)) {
+    if (identical(ends$to, object_type_id)) {
       incoming <- c(incoming, list(link))
     }
   }
@@ -76,15 +65,16 @@ find_links_for_type <- function(bundle, object_type_id) {
 
 #' Get an object type from a bundle by ID
 #'
+#' Unlike `ontologySpecR::bundle_object_type()`, an unknown id returns `NULL`
+#' instead of aborting, so UI code can degrade to showing the raw id.
+#'
 #' @param bundle An ontologySpecR bundle.
 #' @param object_type_id Character string: the object type ID.
 #' @return The matching object type, or NULL if not found.
 #' @keywords internal
 get_object_type <- function(bundle, object_type_id) {
-  for (obj in bundle$objects) {
-    if (identical(obj$id, object_type_id)) return(obj)
-  }
-  NULL
+  if (is.null(object_type_id) || !nzchar(object_type_id)) return(NULL)
+  ontologySpecR::bundle_object_types(bundle)[[object_type_id]]
 }
 
 #' Build a named choices vector for object types
@@ -96,9 +86,11 @@ get_object_type <- function(bundle, object_type_id) {
 #' @return A named character vector.
 #' @keywords internal
 object_type_choices <- function(bundle) {
-  ids <- vapply(bundle$objects, function(o) o$id, character(1))
-  names(ids) <- vapply(bundle$objects, display_name, character(1))
-  ids
+  types <- ontologySpecR::bundle_object_types(bundle)
+  ids <- names(types)
+  if (is.null(ids)) ids <- character(0)
+  labels <- vapply(types, display_name, character(1), USE.NAMES = FALSE)
+  stats::setNames(ids, labels)
 }
 
 #' Find actions that target a given object type
@@ -109,8 +101,8 @@ object_type_choices <- function(bundle) {
 #' @keywords internal
 find_actions_for_type <- function(bundle, object_type_id) {
   actions <- list()
-  for (action in bundle$actions) {
-    if (object_type_id %in% action$targets) {
+  for (action in unname(ontologySpecR::bundle_action_types(bundle))) {
+    if (object_type_id %in% unlist(action$targets)) {
       actions <- c(actions, list(action))
     }
   }
@@ -120,12 +112,14 @@ find_actions_for_type <- function(bundle, object_type_id) {
 #' Get primary key property IDs for an object type
 #'
 #' @param object_type An ontologySpecR object_type.
-#' @return A character vector of primary key property IDs.
+#' @return A character vector of primary key property IDs (empty if the type
+#'   declares no primary key).
 #' @keywords internal
 get_pk_columns <- function(object_type) {
-  pk <- object_type$primaryKey
-  if (is.null(pk)) return(character(0))
-  pk$properties
+  tryCatch(
+    ontologySpecR::object_pk(object_type),
+    error = function(e) character(0)
+  )
 }
 
 #' Format a property value for display

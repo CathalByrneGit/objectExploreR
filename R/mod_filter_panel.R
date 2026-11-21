@@ -65,7 +65,7 @@ filter_panel_server <- function(id, bundle, selected_type_id, connection) {
       widgets <- list()
       registry <- list()
 
-      for (prop in obj_type$properties) {
+      for (prop in ontologySpecR::object_properties(obj_type)) {
         prop_type <- prop$type
         input_id <- paste0("filter_", prop$id)
         label <- display_name(prop)

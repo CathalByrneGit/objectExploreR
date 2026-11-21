@@ -1,325 +1,162 @@
-test_that("apply_filter_to_os applies text filter", {
-  skip_if_not_installed("RSQLite")
-  skip_if_not_installed("ontologySpecR")
-  skip_if_not_installed("objectSetsR")
+# These exercise the objectSetsR bridge against the spec example bundle and a
+# matching database (see helper-fixtures.R).
 
-  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
-  on.exit(DBI::dbDisconnect(con), add = TRUE)
+fixture_ctx <- function(env = parent.frame()) {
+  con <- make_aviation_con(env)
+  objectSetsR::ontology_context(aviation_bundle(), con)
+}
 
-  DBI::dbExecute(con, "
-    CREATE TABLE airports (
-      airport_id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      city TEXT,
-      country TEXT
-    )
-  ")
-  DBI::dbExecute(con, "
-    INSERT INTO airports VALUES
-      ('JFK', 'JFK International', 'New York', 'United States'),
-      ('LAX', 'LAX International', 'Los Angeles', 'United States'),
-      ('LHR', 'Heathrow', 'London', 'United Kingdom')
-  ")
+collect_filtered <- function(os, spec) {
+  objectSetsR::os_collect(apply_filter_to_os(os, spec))
+}
 
-  b <- ontologySpecR::read_bundle(
-    system.file("examples", "aviation-demo.json", package = "ontologySpecR")
-  )
-  ctx <- objectSetsR::ontology_context(b, con)
-  os <- objectSetsR::object_set(ctx, "Airport")
+test_that("text filter matches substrings, case-insensitively", {
+  ctx <- fixture_ctx()
+  os  <- objectSetsR::object_set(ctx, "Airport")
 
-  filter_spec <- list(property_id = "country", type = "text", value = "United")
-  filtered_os <- apply_filter_to_os(os, filter_spec)
+  res <- collect_filtered(os, list(property_id = "country", type = "text",
+                                   value = "United"))
+  expect_equal(sort(res$airport_id), c("JFK", "LAX", "LHR"))
 
-  result <- objectSetsR::os_collect(filtered_os)
-  expect_equal(nrow(result), 2)
+  res <- collect_filtered(os, list(property_id = "country", type = "text",
+                                   value = "united kingdom"))
+  expect_equal(res$airport_id, "LHR")
 })
 
-test_that("apply_filter_to_os applies select filter", {
-  skip_if_not_installed("RSQLite")
-  skip_if_not_installed("ontologySpecR")
-  skip_if_not_installed("objectSetsR")
-
-  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
-  on.exit(DBI::dbDisconnect(con), add = TRUE)
-
-  DBI::dbExecute(con, "
-    CREATE TABLE airports (
-      airport_id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      city TEXT,
-      country TEXT
-    )
-  ")
-  DBI::dbExecute(con, "
-    INSERT INTO airports VALUES
-      ('JFK', 'JFK', 'New York', 'United States'),
-      ('LAX', 'LAX', 'Los Angeles', 'United States'),
-      ('LHR', 'Heathrow', 'London', 'United Kingdom')
-  ")
-
-  b <- ontologySpecR::read_bundle(
-    system.file("examples", "aviation-demo.json", package = "ontologySpecR")
-  )
-  ctx <- objectSetsR::ontology_context(b, con)
-  os <- objectSetsR::object_set(ctx, "Airport")
-
-  filter_spec <- list(property_id = "country", type = "select", value = "United Kingdom")
-  filtered_os <- apply_filter_to_os(os, filter_spec)
-
-  result <- objectSetsR::os_collect(filtered_os)
-  expect_equal(nrow(result), 1)
-  expect_equal(result$country, "United Kingdom")
+test_that("blank text filter is a no-op", {
+  ctx <- fixture_ctx()
+  os  <- objectSetsR::object_set(ctx, "Airport")
+  res <- collect_filtered(os, list(property_id = "country", type = "text",
+                                   value = "  "))
+  expect_equal(nrow(res), 4L)
 })
 
-test_that("apply_filter_to_os applies numeric_range filter", {
-  skip_if_not_installed("RSQLite")
-  skip_if_not_installed("ontologySpecR")
-  skip_if_not_installed("objectSetsR")
+test_that("select and select_multi filters match exact values", {
+  ctx <- fixture_ctx()
+  os  <- objectSetsR::object_set(ctx, "Airport")
 
-  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
-  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  res <- collect_filtered(os, list(property_id = "country", type = "select",
+                                   value = "France"))
+  expect_equal(res$airport_id, "CDG")
 
-  DBI::dbExecute(con, "
-    CREATE TABLE airports (
-      airport_id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      city TEXT,
-      country TEXT,
-      latitude REAL,
-      longitude REAL,
-      elevation_ft INTEGER
-    )
-  ")
-  DBI::dbExecute(con, "
-    INSERT INTO airports VALUES
-      ('JFK', 'JFK', 'NY', 'US', 40.6, -73.8, 13),
-      ('LAX', 'LAX', 'LA', 'US', 33.9, -118.4, 128),
-      ('LHR', 'LHR', 'London', 'UK', 51.5, -0.5, 83)
-  ")
+  res <- collect_filtered(os, list(property_id = "country",
+                                   type = "select_multi",
+                                   value = c("France", "United Kingdom")))
+  expect_equal(sort(res$airport_id), c("CDG", "LHR"))
 
-  b <- ontologySpecR::read_bundle(
-    system.file("examples", "aviation-demo.json", package = "ontologySpecR")
-  )
-  ctx <- objectSetsR::ontology_context(b, con)
-  os <- objectSetsR::object_set(ctx, "Airport")
-
-  filter_spec <- list(
-    property_id = "elevation_ft",
-    type = "numeric_range",
-    value = list(min = 50, max = 200)
-  )
-  filtered_os <- apply_filter_to_os(os, filter_spec)
-
-  result <- objectSetsR::os_collect(filtered_os)
-  expect_equal(nrow(result), 2)
+  res <- collect_filtered(os, list(property_id = "country",
+                                   type = "select_multi",
+                                   value = character(0)))
+  expect_equal(nrow(res), 4L)
 })
 
-test_that("apply_filter_to_os applies boolean_tri filter", {
-  skip_if_not_installed("RSQLite")
-  skip_if_not_installed("ontologySpecR")
-  skip_if_not_installed("objectSetsR")
+test_that("numeric_range filter is inclusive and tolerates one-sided bounds", {
+  ctx <- fixture_ctx()
+  os  <- objectSetsR::object_set(ctx, "Airport")
 
-  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
-  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  res <- collect_filtered(os, list(property_id = "elevation_ft",
+                                   type = "numeric_range",
+                                   value = list(min = 50, max = 200)))
+  expect_equal(sort(res$airport_id), c("LAX", "LHR"))
 
-  DBI::dbExecute(con, "
-    CREATE TABLE airlines (
-      airline_id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      country TEXT,
-      active INTEGER
-    )
-  ")
-  DBI::dbExecute(con, "
-    INSERT INTO airlines VALUES
-      ('AA', 'American Airlines', 'US', 1),
-      ('BA', 'British Airways', 'UK', 1),
-      ('XX', 'Defunct Air', 'XX', 0)
-  ")
-
-  b <- ontologySpecR::read_bundle(
-    system.file("examples", "aviation-demo.json", package = "ontologySpecR")
-  )
-  ctx <- objectSetsR::ontology_context(b, con)
-  os <- objectSetsR::object_set(ctx, "Airline")
-
-  filter_spec <- list(property_id = "active", type = "boolean_tri", value = "TRUE")
-  filtered_os <- apply_filter_to_os(os, filter_spec)
-
-  result <- objectSetsR::os_collect(filtered_os)
-  expect_equal(nrow(result), 2)
-
-  filter_spec2 <- list(property_id = "active", type = "boolean_tri", value = "any")
-  filtered_os2 <- apply_filter_to_os(os, filter_spec2)
-  result2 <- objectSetsR::os_collect(filtered_os2)
-  expect_equal(nrow(result2), 3)
+  res <- collect_filtered(os, list(property_id = "elevation_ft",
+                                   type = "numeric_range",
+                                   value = list(min = 300, max = NA)))
+  expect_equal(res$airport_id, "CDG")
 })
 
-test_that("apply_search_to_os searches across string properties", {
-  skip_if_not_installed("RSQLite")
-  skip_if_not_installed("ontologySpecR")
-  skip_if_not_installed("objectSetsR")
+test_that("boolean_tri filter handles True / False / Any", {
+  ctx <- fixture_ctx()
+  os  <- objectSetsR::object_set(ctx, "Airline")
 
-  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
-  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  active <- collect_filtered(os, list(property_id = "active",
+                                      type = "boolean_tri", value = "TRUE"))
+  expect_equal(sort(active$airline_id), c("AA", "BA"))
 
-  DBI::dbExecute(con, "
-    CREATE TABLE airports (
-      airport_id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      city TEXT,
-      country TEXT,
-      latitude REAL,
-      longitude REAL,
-      elevation_ft INTEGER
-    )
-  ")
-  DBI::dbExecute(con, "
-    INSERT INTO airports VALUES
-      ('JFK', 'JFK International', 'New York', 'United States', 40.6, -73.8, 13),
-      ('LAX', 'LAX International', 'Los Angeles', 'United States', 33.9, -118.4, 128),
-      ('LHR', 'London Heathrow', 'London', 'United Kingdom', 51.5, -0.5, 83)
-  ")
+  inactive <- collect_filtered(os, list(property_id = "active",
+                                        type = "boolean_tri", value = "FALSE"))
+  expect_equal(inactive$airline_id, "XX")
 
-  b <- ontologySpecR::read_bundle(
-    system.file("examples", "aviation-demo.json", package = "ontologySpecR")
-  )
-  ctx <- objectSetsR::ontology_context(b, con)
-  os <- objectSetsR::object_set(ctx, "Airport")
-
-  searched_os <- apply_search_to_os(os, b, "Airport", "London")
-  result <- objectSetsR::os_collect(searched_os)
-  expect_equal(nrow(result), 1)
-  expect_equal(result$airport_id, "LHR")
+  any_val <- collect_filtered(os, list(property_id = "active",
+                                       type = "boolean_tri", value = "any"))
+  expect_equal(nrow(any_val), 3L)
 })
 
-test_that("traverse_link_os performs forward traversal", {
-  skip_if_not_installed("RSQLite")
-  skip_if_not_installed("ontologySpecR")
-  skip_if_not_installed("objectSetsR")
+test_that("filters compose", {
+  ctx <- fixture_ctx()
+  os  <- objectSetsR::object_set(ctx, "Airport")
+  os  <- apply_filter_to_os(os, list(property_id = "country", type = "text",
+                                     value = "United"))
+  os  <- apply_filter_to_os(os, list(property_id = "elevation_ft",
+                                     type = "numeric_range",
+                                     value = list(min = 100, max = 1000)))
+  expect_equal(objectSetsR::os_collect(os)$airport_id, "LAX")
+})
 
-  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
-  on.exit(DBI::dbDisconnect(con), add = TRUE)
+test_that("apply_search_to_os searches every string property, any case", {
+  ctx <- fixture_ctx()
+  b   <- aviation_bundle()
+  os  <- objectSetsR::object_set(ctx, "Airport")
 
-  DBI::dbExecute(con, "
-    CREATE TABLE airports (
-      airport_id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      city TEXT,
-      country TEXT,
-      latitude REAL,
-      longitude REAL,
-      elevation_ft INTEGER
-    )
-  ")
-  DBI::dbExecute(con, "
-    INSERT INTO airports VALUES
-      ('JFK', 'JFK', 'NY', 'US', 40.6, -73.8, 13),
-      ('LHR', 'LHR', 'London', 'UK', 51.5, -0.5, 83)
-  ")
-
-  DBI::dbExecute(con, "
-    CREATE TABLE routes (
-      route_id TEXT PRIMARY KEY,
-      origin_id TEXT NOT NULL,
-      destination_id TEXT NOT NULL,
-      airline_id TEXT NOT NULL,
-      stops INTEGER DEFAULT 0,
-      equipment TEXT
-    )
-  ")
-  DBI::dbExecute(con, "
-    INSERT INTO routes VALUES
-      ('R001', 'JFK', 'LHR', 'AA', 0, '777'),
-      ('R002', 'JFK', 'LHR', 'BA', 0, 'A380')
-  ")
-
-  b <- ontologySpecR::read_bundle(
-    system.file("examples", "aviation-demo.json", package = "ontologySpecR")
-  )
-  ctx <- objectSetsR::ontology_context(b, con)
-
-  route_origin <- NULL
-  for (link in b$links) {
-    if (link$id == "RouteOrigin") route_origin <- link
+  hit <- function(text) {
+    objectSetsR::os_collect(apply_search_to_os(os, b, "Airport", text))$airport_id
   }
-
-  result <- traverse_link_os(ctx, route_origin, c("R001", "R002"), "forward")
-  expect_s3_class(result, "data.frame")
-  expect_true("airport_id" %in% names(result))
+  expect_equal(hit("London"), "LHR")            # name + city
+  expect_equal(hit("london"), "LHR")            # case-insensitive
+  expect_equal(hit("France"), "CDG")            # country only
+  expect_equal(sort(hit("International")), c("JFK", "LAX"))
+  expect_equal(length(hit("")), 4L)             # blank search = everything
+  expect_equal(length(hit("zzz-no-match")), 0L)
 })
 
-test_that("fetch_distinct_os returns unique values", {
-  skip_if_not_installed("RSQLite")
-  skip_if_not_installed("ontologySpecR")
-  skip_if_not_installed("objectSetsR")
+test_that("traverse_link_os follows a link forward, once per target", {
+  ctx  <- fixture_ctx()
+  link <- fixture_link_type("RouteOrigin")
 
-  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
-  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  # R001 and R002 both originate at JFK: one airport, not two
+  res <- traverse_link_os(ctx, link, c("R001", "R002"), "forward")
+  expect_equal(res$airport_id, "JFK")
 
-  DBI::dbExecute(con, "
-    CREATE TABLE airports (
-      airport_id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      city TEXT,
-      country TEXT,
-      latitude REAL,
-      longitude REAL,
-      elevation_ft INTEGER
-    )
-  ")
-  DBI::dbExecute(con, "
-    INSERT INTO airports VALUES
-      ('JFK', 'JFK', 'NY', 'United States', 40.6, -73.8, 13),
-      ('LAX', 'LAX', 'LA', 'United States', 33.9, -118.4, 128),
-      ('LHR', 'LHR', 'London', 'United Kingdom', 51.5, -0.5, 83)
-  ")
+  res <- traverse_link_os(ctx, link, c("R001", "R004"), "forward")
+  expect_equal(sort(res$airport_id), c("JFK", "LAX"))
+})
 
-  b <- ontologySpecR::read_bundle(
-    system.file("examples", "aviation-demo.json", package = "ontologySpecR")
-  )
-  ctx <- objectSetsR::ontology_context(b, con)
+test_that("traverse_link_os follows a link in reverse (search around)", {
+  ctx  <- fixture_ctx()
+  link <- fixture_link_type("RouteOrigin")
 
+  res <- traverse_link_os(ctx, link, "JFK", "reverse")
+  expect_equal(sort(res$route_id), c("R001", "R002"))
+
+  expect_equal(nrow(traverse_link_os(ctx, link, "CDG", "reverse")), 0L)
+  expect_equal(nrow(traverse_link_os(ctx, link, character(0), "reverse")), 0L)
+})
+
+test_that("a second link type to the same target keeps its own join keys", {
+  ctx  <- fixture_ctx()
+  link <- fixture_link_type("RouteDestination")
+  res  <- traverse_link_os(ctx, link, "R001", "forward")
+  expect_equal(res$airport_id, "LHR")
+})
+
+test_that("fetch_distinct_os returns sorted unique values", {
+  ctx  <- fixture_ctx()
   vals <- fetch_distinct_os(ctx, "Airport", "country")
-  expect_type(vals, "character")
-  expect_equal(length(vals), 2)
-  expect_true("United States" %in% vals)
-  expect_true("United Kingdom" %in% vals)
+  expect_equal(vals, c("France", "United Kingdom", "United States"))
+
+  expect_equal(length(fetch_distinct_os(ctx, "Airport", "country", limit = 2)), 2L)
 })
 
-test_that("fetch_range_os returns min/max values", {
-  skip_if_not_installed("RSQLite")
-  skip_if_not_installed("ontologySpecR")
-  skip_if_not_installed("objectSetsR")
+test_that("fetch_range_os returns min and max", {
+  ctx <- fixture_ctx()
+  rng <- fetch_range_os(ctx, "Airport", "elevation_ft")
+  expect_equal(rng$min, 13)
+  expect_equal(rng$max, 392)
+})
 
-  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
-  on.exit(DBI::dbDisconnect(con), add = TRUE)
-
-  DBI::dbExecute(con, "
-    CREATE TABLE airports (
-      airport_id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      city TEXT,
-      country TEXT,
-      latitude REAL,
-      longitude REAL,
-      elevation_ft INTEGER
-    )
-  ")
-  DBI::dbExecute(con, "
-    INSERT INTO airports VALUES
-      ('JFK', 'JFK', 'NY', 'US', 40.6, -73.8, 13),
-      ('LAX', 'LAX', 'LA', 'US', 33.9, -118.4, 128),
-      ('LHR', 'LHR', 'London', 'UK', 51.5, -0.5, 83)
-  ")
-
-  b <- ontologySpecR::read_bundle(
-    system.file("examples", "aviation-demo.json", package = "ontologySpecR")
-  )
-  ctx <- objectSetsR::ontology_context(b, con)
-
-  range_val <- fetch_range_os(ctx, "Airport", "elevation_ft")
-  expect_type(range_val, "list")
-  expect_equal(range_val$min, 13)
-  expect_equal(range_val$max, 128)
+test_that("collect_limited caps rows in the query", {
+  ctx <- fixture_ctx()
+  os  <- objectSetsR::object_set(ctx, "Airport")
+  expect_equal(nrow(collect_limited(os, 2L)), 2L)
+  expect_equal(nrow(collect_limited(os, 100L)), 4L)
 })

@@ -1,6 +1,6 @@
 Package: objectExplorerR
 Title: Interactive Shiny Explorer for Ontology Objects
-Version: 0.2.0
+Version: 0.3.0
 Authors@R:
     person("Cathal", "Byrne", role = c("aut", "cre"),
            email = "cathalbyrne@example.com")
@@ -19,14 +19,13 @@ RoxygenNote: 7.3.3
 Depends:
     R (>= 3.6)
 Imports:
-    ontologySpecR,
+    ontologySpecR (>= 0.2.1),
     objectSetsR,
     actionTypesR,
     DBI,
     shiny (>= 1.7.0),
     bslib,
     DT,
-    dplyr,
     rlang,
     jsonlite
 Suggests:
@@ -36,7 +35,14 @@ Suggests:
     visNetwork,
     conceptR,
     testthat (>= 3.0.0),
+    withr,
     knitr,
     rmarkdown
+Remotes:
+    CathalByrneGit/ontologySpecR,
+    CathalByrneGit/objectSetsR,
+    CathalByrneGit/actionTypesR,
+    CathalByrneGit/vertexR,
+    CathalByrneGit/conceptR
 Config/testthat/edition: 3
 VignetteBuilder: knitr

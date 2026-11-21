@@ -6,7 +6,9 @@
 #' writing code.
 #'
 #' @param bundle An ontologySpecR bundle containing object types, link types,
-#'   actions, and other ontology definitions.
+#'   actions, and other ontology definitions. Anything
+#'   `ontologySpecR::as_bundle()` accepts (including a path to a JSON file)
+#'   is fine; it is normalised once on entry.
 #' @param connection A DBI connection object to the backing database.
 #' @param action_ctx An ActionContext from actionTypesR (preferred method for
 #'   action execution). If provided, actions use `actionTypesR::submit_action()`.
@@ -27,8 +29,7 @@
 #' library(DBI)
 #' library(actionTypesR)
 #'
-#' b <- read_bundle(system.file("examples", "aviation-demo.json",
-#'                               package = "ontologySpecR"))
+#' b <- ontologySpecR::spec_example_bundle()
 #' con <- dbConnect(RSQLite::SQLite(), ":memory:")
 #' # ... seed data ...
 #'
@@ -50,15 +51,19 @@ explore_ontology <- function(bundle, connection,
                               concept_cols_fn = NULL,
                               ...) {
 
-  if (!inherits(bundle, "ontology_bundle")) {
-    stop("`bundle` must be an ontologySpecR bundle object.", call. = FALSE)
+  if (!inherits(connection, "DBIConnection") || !DBI::dbIsValid(connection)) {
+    stop("`connection` must be an open DBI connection object.", call. = FALSE)
   }
-  if (!inherits(connection, "DBIConnection")) {
-    stop("`connection` must be a DBI connection object.", call. = FALSE)
-  }
-  if (length(bundle$objects) == 0) {
+
+  # Normalise once, before any module starts. Accepts an ontology_bundle, a
+  # (possibly legacy-keyed) list, or a path to a bundle JSON file.
+  bundle <- ontologySpecR::as_bundle(bundle)
+
+  if (length(ontologySpecR::bundle_object_types(bundle)) == 0) {
     stop("Bundle contains no object types.", call. = FALSE)
   }
+
+  has_actions <- length(ontologySpecR::bundle_action_types(bundle)) > 0
 
   if (length(action_handlers) > 0 && is.null(action_ctx)) {
     warning(
@@ -66,9 +71,17 @@ explore_ontology <- function(bundle, connection,
       "Use `action_ctx` (an ActionContext from actionTypesR) instead.",
       call. = FALSE
     )
+    # Backward compatibility: wrap the raw handlers in an ActionContext so
+    # every action still goes through actionTypesR::submit_action().
+    action_ctx <- actionTypesR::action_context(bundle, connection)
+    for (h_name in names(action_handlers)) {
+      action_ctx <- actionTypesR::register_handler(
+        action_ctx, h_name, action_handlers[[h_name]]
+      )
+    }
   }
 
-  if (is.null(action_ctx) && length(bundle$actions) > 0 && length(action_handlers) == 0) {
+  if (is.null(action_ctx) && has_actions) {
     warning(
       "Bundle defines actions but no action_ctx or action_handlers provided. ",
       "Actions will not execute.",
@@ -78,7 +91,7 @@ explore_ontology <- function(bundle, connection,
 
   ui <- build_explorer_ui()
 
-  server <- build_explorer_server(bundle, connection, action_ctx, action_handlers,
+  server <- build_explorer_server(bundle, connection, action_ctx,
                                    concept_cols_fn)
 
   app <- shiny::shinyApp(ui = ui, server = server, ...)
@@ -153,7 +166,7 @@ build_explorer_ui <- function() {
 
 #' Build the Explorer Server function
 #' @keywords internal
-build_explorer_server <- function(bundle, connection, action_ctx, action_handlers,
+build_explorer_server <- function(bundle, connection, action_ctx,
                                    concept_cols_fn) {
   function(input, output, session) {
     bundle_r <- shiny::reactive(bundle)
@@ -208,15 +221,22 @@ build_explorer_server <- function(bundle, connection, action_ctx, action_handler
       link_filter_val(lf)
     })
 
+    # A traversal filter only makes sense on the type it lands on. Keep it
+    # while the dropdown shows that type; drop it as soon as the user moves
+    # to another one. (The type selector consumes `nav_target` before the
+    # browser echoes the new dropdown value, so `nav_target` cannot be used
+    # to tell a traversal from a manual change.)
     shiny::observeEvent(type_sel$selected_type_id(), {
-      if (is.null(nav_target())) {
+      lf <- link_filter_val()
+      if (!is.null(lf) && !identical(lf$target_type, type_sel$selected_type_id())) {
         link_filter_val(NULL)
+        link_panel$link_filter(NULL)
       }
     })
 
     detail_panel_server(
       "detail_panel", bundle_r, type_sel$selected_type_id,
-      results$selected_row, connection, action_ctx, action_handlers, nav_target
+      results$selected_row, connection, action_ctx, nav_target
     )
   }
 }

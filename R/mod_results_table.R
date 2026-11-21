@@ -90,9 +90,7 @@ results_table_server <- function(id, bundle, selected_type_id, active_filters,
             os <- apply_search_to_os(os, bundle(), type_id, search)
           }
 
-          df <- objectSetsR::os_collect(os)
-          if (nrow(df) > 1000) df <- df[seq_len(1000), , drop = FALSE]
-          df
+          collect_limited(os, 1000L)
         }
       }, error = function(e) {
         shiny::showNotification(

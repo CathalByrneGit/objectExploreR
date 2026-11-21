@@ -46,12 +46,11 @@ detail_panel_ui <- function(id) {
 #' @param selected_type_id Reactive expression returning selected type ID.
 #' @param selected_row Reactive expression returning the selected row data.
 #' @param connection The DBI connection object.
-#' @param action_ctx ActionContext from actionTypesR (preferred) or NULL.
-#' @param action_handlers Named list of R handler functions (deprecated fallback).
+#' @param action_ctx ActionContext from actionTypesR, or NULL.
 #' @param nav_target ReactiveVal for programmatic navigation.
 #' @keywords internal
 detail_panel_server <- function(id, bundle, selected_type_id, selected_row,
-                                 connection, action_ctx, action_handlers, nav_target) {
+                                 connection, action_ctx, nav_target) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
@@ -87,7 +86,7 @@ detail_panel_server <- function(id, bundle, selected_type_id, selected_row,
         stringsAsFactors = FALSE
       )
 
-      for (prop in obj_type$properties) {
+      for (prop in ontologySpecR::object_properties(obj_type)) {
         col_name <- prop$id
         value <- row[[col_name]]
         props <- rbind(props, data.frame(
@@ -117,9 +116,10 @@ detail_panel_server <- function(id, bundle, selected_type_id, selected_row,
       sections <- list()
 
       for (link in links$outgoing) {
-        target_type <- get_object_type(b, link$to)
+        ends <- ontologySpecR::link_endpoints(link)
+        target_type <- get_object_type(b, ends$to)
         link_label <- display_name(link)
-        target_label <- if (!is.null(target_type)) display_name(target_type) else link$to
+        target_label <- if (!is.null(target_type)) display_name(target_type) else ends$to
 
         linked_data <- tryCatch(
           traverse_link_os(ctx, link, pk_value, direction = "forward"),
@@ -154,9 +154,10 @@ detail_panel_server <- function(id, bundle, selected_type_id, selected_row,
       }
 
       for (link in links$incoming) {
-        source_type <- get_object_type(b, link$from)
+        ends <- ontologySpecR::link_endpoints(link)
+        source_type <- get_object_type(b, ends$from)
         link_label <- display_name(link)
-        source_label <- if (!is.null(source_type)) display_name(source_type) else link$from
+        source_label <- if (!is.null(source_type)) display_name(source_type) else ends$from
 
         linked_data <- tryCatch(
           traverse_link_os(ctx, link, pk_value, direction = "reverse"),
@@ -215,27 +216,28 @@ detail_panel_server <- function(id, bundle, selected_type_id, selected_row,
 
       action_widgets <- lapply(seq_along(actions), function(i) {
         action <- actions[[i]]
-        action_form_ui(ns(paste0("action_", i)), action)
+        action_form_ui(ns(paste0("action_", action$id)), action)
       })
 
       shiny::tagList(action_widgets)
     })
 
+    # One module server per action, keyed by action id and created once.
+    # Re-running moduleServer() with the same id stacks duplicate observers,
+    # which would submit an action several times per click.
+    registered_actions <- character(0)
     shiny::observe({
       b <- bundle()
       type_id <- selected_type_id()
       if (is.null(type_id)) return()
 
-      actions <- find_actions_for_type(b, type_id)
-      for (i in seq_along(actions)) {
-        local({
-          idx <- i
-          action <- actions[[idx]]
-          action_form_server(
-            paste0("action_", idx), action, connection,
-            action_ctx, action_handlers, selected_row, current_type
-          )
-        })
+      for (action in find_actions_for_type(b, type_id)) {
+        if (action$id %in% registered_actions) next
+        registered_actions <<- c(registered_actions, action$id)
+        action_form_server(
+          paste0("action_", action$id), action, connection,
+          action_ctx, selected_row, current_type
+        )
       }
     })
 
@@ -260,7 +262,7 @@ detail_panel_server <- function(id, bundle, selected_type_id, selected_row,
         ))
       }
 
-      if (length(b$links) == 0) {
+      if (length(ontologySpecR::bundle_link_types(b)) == 0) {
         return(shiny::p("No links defined in bundle.", class = "text-muted"))
       }
 
