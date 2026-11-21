@@ -23,8 +23,8 @@ apply_filter_to_os <- function(os, filter_spec) {
   switch(widget_type,
     text = {
       if (!nzchar(trimws(value))) return(os)
-      pattern <- paste0("%", value, "%")
-      objectSetsR::os_filter(os, !!prop_sym %like% !!pattern)
+      pattern <- paste0("%", tolower(value), "%")
+      objectSetsR::os_filter(os, tolower(!!prop_sym) %like% !!pattern)
     },
     select = {
       if (is.null(value) || !nzchar(value)) return(os)
@@ -94,14 +94,16 @@ apply_search_to_os <- function(os, bundle, type_id, search_text) {
   obj_type <- get_object_type(bundle, type_id)
   if (is.null(obj_type)) return(os)
 
-  string_props <- Filter(function(p) identical(p$type, "string"), obj_type$properties)
+  string_props <- Filter(function(p) identical(p$type, "string"),
+                         ontologySpecR::object_properties(obj_type))
   if (length(string_props) == 0) return(os)
 
-  pattern <- paste0("%", search_text, "%")
+  # LOWER() on both sides: LIKE is case-sensitive on DuckDB, not on SQLite.
+  pattern <- paste0("%", tolower(search_text), "%")
 
   or_exprs <- lapply(string_props, function(p) {
     prop_sym <- rlang::sym(p$id)
-    rlang::expr(!!prop_sym %like% !!pattern)
+    rlang::expr(tolower(!!prop_sym) %like% !!pattern)
   })
 
   combined_expr <- Reduce(function(a, b) rlang::expr(!!a | !!b), or_exprs)
@@ -125,12 +127,13 @@ traverse_link_os <- function(ctx, link_type, source_ids, direction = "forward") 
   bundle <- ctx$bundle
   link_type_id <- link_type$id
 
+  ends <- ontologySpecR::link_endpoints(link_type)
   if (direction == "forward") {
-    source_type_id <- link_type$from
-    target_type_id <- link_type$to
+    source_type_id <- ends$from
+    target_type_id <- ends$to
   } else {
-    source_type_id <- link_type$to
-    target_type_id <- link_type$from
+    source_type_id <- ends$to
+    target_type_id <- ends$from
   }
 
   source_type <- get_object_type(bundle, source_type_id)
@@ -149,6 +152,10 @@ traverse_link_os <- function(ctx, link_type, source_ids, direction = "forward") 
   } else {
     target_os <- objectSetsR::os_search_around(source_os, link_type_id)
   }
+
+  # Several sources can link to the same target (two routes from JFK):
+  # show each linked object once.
+  target_os <- objectSetsR::os_distinct(target_os)
 
   tryCatch(
     objectSetsR::os_collect(target_os),
@@ -212,10 +219,12 @@ fetch_range_os <- function(ctx, type_id, property_id) {
   result
 }
 
-#' Custom LIKE operator for objectSetsR filters
+#' Collect an ObjectSet with a row cap pushed down to the database
 #'
-#' This is registered so that os_filter can use %like%.
+#' @param os An ObjectSet.
+#' @param limit Maximum number of rows.
+#' @return A data.frame with at most `limit` rows.
 #' @keywords internal
-`%like%` <- function(x, pattern) {
-  dplyr::sql(paste0(x, " LIKE '", gsub("'", "''", pattern), "'"))
+collect_limited <- function(os, limit = 1000L) {
+  objectSetsR::os_collect(objectSetsR::os_slice(os, offset = 0L, n = limit))
 }

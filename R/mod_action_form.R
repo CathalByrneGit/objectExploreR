@@ -28,13 +28,13 @@ action_form_ui <- function(id, action) {
 #' @param id Module namespace ID.
 #' @param action An ontologySpecR action_type object.
 #' @param connection The DBI connection object.
-#' @param action_ctx ActionContext from actionTypesR (preferred) or NULL.
-#' @param action_handlers Named list of R handler functions (deprecated fallback).
+#' @param action_ctx ActionContext from actionTypesR, or NULL (actions then
+#'   cannot execute and the form says so).
 #' @param selected_row Reactive expression for the selected row.
 #' @param current_type Reactive expression for the current object type.
 #' @keywords internal
 action_form_server <- function(id, action, connection, action_ctx,
-                                action_handlers, selected_row, current_type) {
+                                selected_row, current_type) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
@@ -86,7 +86,9 @@ action_form_server <- function(id, action, connection, action_ctx,
       }
 
       result <- tryCatch({
-        if (!is.null(action_ctx)) {
+        if (is.null(action_ctx)) {
+          "No action context available. Pass `action_ctx` to explore_ontology()."
+        } else {
           res <- actionTypesR::submit_action(
             ctx = action_ctx,
             action_type_id = action$id,
@@ -94,23 +96,9 @@ action_form_server <- function(id, action, connection, action_ctx,
             target_ids = target_ids
           )
           paste("Action completed:", res$status)
-        } else if (requireNamespace("actionTypesR", quietly = TRUE) &&
-                   length(action_handlers) > 0) {
-          ctx <- actionTypesR::action_context(shiny::isolate(bundle()), connection)
-          for (h_name in names(action_handlers)) {
-            ctx <- actionTypesR::register_handler(ctx, h_name, action_handlers[[h_name]])
-          }
-          res <- actionTypesR::submit_action(ctx, action$id, params, target_ids)
-          paste("Action completed:", res$status)
-        } else if (action$id %in% names(action_handlers)) {
-          handler <- action_handlers[[action$id]]
-          handler(connection, action, params, target_ids)
-          "Action executed successfully."
-        } else {
-          "No handler registered for this action. Provide action_ctx or action_handlers."
         }
       }, error = function(e) {
-        paste("Error:", e$message)
+        paste("Error:", conditionMessage(e))
       })
 
       output$action_result <- shiny::renderText(result)

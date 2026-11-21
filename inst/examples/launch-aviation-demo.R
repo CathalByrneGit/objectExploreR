@@ -9,21 +9,22 @@
 #   remotes::install_github("CathalByrneGit/objectExplorerR")
 
 library(ontologySpecR)
-library(objectSetsR)
 library(actionTypesR)
 library(objectExplorerR)
 library(DBI)
 
-# Read the aviation demo bundle
-b <- read_bundle(system.file("examples", "aviation-demo.json",
-                              package = "ontologySpecR"))
+# The shared example bundle
+b <- spec_example_bundle()
 
-# Create an in-memory database and seed demo data
+# Create an in-memory database and seed demo data. The bundle binds Airport
+# to the table `public.airports`, so SQLite needs an attached database called
+# "public" (with DuckDB, `CREATE SCHEMA public` does the same job).
 con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+DBI::dbExecute(con, "ATTACH DATABASE ':memory:' AS public")
 
 # Create and populate airports table
 DBI::dbExecute(con, "
-  CREATE TABLE airports (
+  CREATE TABLE public.airports (
     airport_id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     city TEXT,
@@ -35,7 +36,7 @@ DBI::dbExecute(con, "
 ")
 
 DBI::dbExecute(con, "
-  INSERT INTO airports VALUES
+  INSERT INTO public.airports VALUES
     ('JFK', 'John F. Kennedy International', 'New York', 'United States', 40.6413, -73.7781, 13),
     ('LAX', 'Los Angeles International', 'Los Angeles', 'United States', 33.9425, -118.4081, 128),
     ('ORD', 'O''Hare International', 'Chicago', 'United States', 41.9742, -87.9073, 672),

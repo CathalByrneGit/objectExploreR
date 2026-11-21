@@ -19,22 +19,8 @@ test_that("display_name falls back to id when display name is empty", {
   expect_equal(display_name(obj), "Airport")
 })
 
-test_that("property_column returns source column when specified", {
-  prop <- list(id = "airport_id", source = list(column = "ap_id"))
-  expect_equal(property_column(prop), "ap_id")
-})
-
-test_that("property_column falls back to id", {
-  prop <- list(id = "airport_id", source = NULL)
-  expect_equal(property_column(prop), "airport_id")
-})
-
 test_that("find_links_for_type finds outgoing and incoming links", {
-  skip_if_not_installed("ontologySpecR")
-
-  b <- ontologySpecR::read_bundle(
-    system.file("examples", "aviation-demo.json", package = "ontologySpecR")
-  )
+  b <- aviation_bundle()
 
   result <- find_links_for_type(b, "FlightRoute")
   expect_true(length(result$outgoing) == 3)
@@ -46,11 +32,7 @@ test_that("find_links_for_type finds outgoing and incoming links", {
 })
 
 test_that("get_object_type finds correct object", {
-  skip_if_not_installed("ontologySpecR")
-
-  b <- ontologySpecR::read_bundle(
-    system.file("examples", "aviation-demo.json", package = "ontologySpecR")
-  )
+  b <- aviation_bundle()
 
   airport <- get_object_type(b, "Airport")
   expect_false(is.null(airport))
@@ -61,11 +43,7 @@ test_that("get_object_type finds correct object", {
 })
 
 test_that("object_type_choices returns named vector", {
-  skip_if_not_installed("ontologySpecR")
-
-  b <- ontologySpecR::read_bundle(
-    system.file("examples", "aviation-demo.json", package = "ontologySpecR")
-  )
+  b <- aviation_bundle()
 
   choices <- object_type_choices(b)
   expect_type(choices, "character")
@@ -76,11 +54,7 @@ test_that("object_type_choices returns named vector", {
 })
 
 test_that("find_actions_for_type finds actions targeting a type", {
-  skip_if_not_installed("ontologySpecR")
-
-  b <- ontologySpecR::read_bundle(
-    system.file("examples", "aviation-demo.json", package = "ontologySpecR")
-  )
+  b <- aviation_bundle()
 
   actions <- find_actions_for_type(b, "Airport")
   expect_equal(length(actions), 1)
@@ -91,11 +65,7 @@ test_that("find_actions_for_type finds actions targeting a type", {
 })
 
 test_that("get_pk_columns returns primary key property IDs", {
-  skip_if_not_installed("ontologySpecR")
-
-  b <- ontologySpecR::read_bundle(
-    system.file("examples", "aviation-demo.json", package = "ontologySpecR")
-  )
+  b <- aviation_bundle()
 
   airport <- get_object_type(b, "Airport")
   pk <- get_pk_columns(airport)
@@ -115,4 +85,33 @@ test_that("format_value handles NA and NULL", {
 test_that("format_value formats strings", {
   expect_equal(format_value("hello", "string"), "hello")
   expect_equal(format_value(42, "integer"), "42")
+})
+
+test_that("object_type_choices maps display names to ids, in bundle order", {
+  choices <- object_type_choices(aviation_bundle())
+  expect_equal(unname(choices), c("Airport", "Airline", "FlightRoute"))
+  # the example gives FlightRoute a display name that differs from its id
+  expect_equal(names(choices)[3], "Flight Route")
+})
+
+test_that("get_object_type returns NULL (not an error) for unknown or empty ids", {
+  b <- aviation_bundle()
+  expect_null(get_object_type(b, "Nope"))
+  expect_null(get_object_type(b, NULL))
+  expect_null(get_object_type(b, ""))
+})
+
+test_that("get_pk_columns is empty for a type without a primary key", {
+  ot <- list(id = "NoPk", properties = list())
+  expect_equal(get_pk_columns(ot), character(0))
+})
+
+test_that("helpers accept the legacy bundle layout through as_bundle()", {
+  raw <- jsonlite::fromJSON(
+    system.file("examples", "aviation-demo.json", package = "ontologySpecR"),
+    simplifyVector = TRUE, simplifyDataFrame = FALSE
+  )
+  names(raw)[names(raw) == "objects"] <- "objectTypes"
+  b <- suppressWarnings(ontologySpecR::as_bundle(raw))
+  expect_equal(length(object_type_choices(b)), 3L)
 })

@@ -30,7 +30,8 @@ link_panel_ui <- function(id) {
 #' @return A list:
 #'   \describe{
 #'     \item{nav_target}{ReactiveVal - object_type_id to navigate to.}
-#'     \item{link_filter}{ReactiveVal - list with link_type, source_ids, direction.}
+#'     \item{link_filter}{ReactiveVal - list with link_type, source_ids,
+#'       direction and target_type (the object type the traversal lands on).}
 #'   }
 #' @keywords internal
 link_panel_server <- function(id, bundle, selected_type_id, selected_row,
@@ -55,9 +56,10 @@ link_panel_server <- function(id, bundle, selected_type_id, selected_row,
         widgets <- c(widgets, list(shiny::h5("Outgoing Links")))
         for (i in seq_along(links$outgoing)) {
           link <- links$outgoing[[i]]
-          target_type <- get_object_type(b, link$to)
+          ends <- ontologySpecR::link_endpoints(link)
+          target_type <- get_object_type(b, ends$to)
           link_label <- display_name(link)
-          target_label <- if (!is.null(target_type)) display_name(target_type) else link$to
+          target_label <- if (!is.null(target_type)) display_name(target_type) else ends$to
 
           btn_id <- paste0("traverse_out_", i)
           widgets <- c(widgets, list(
@@ -82,9 +84,10 @@ link_panel_server <- function(id, bundle, selected_type_id, selected_row,
         widgets <- c(widgets, list(shiny::h5("Incoming Links")))
         for (i in seq_along(links$incoming)) {
           link <- links$incoming[[i]]
-          source_type <- get_object_type(b, link$from)
+          ends <- ontologySpecR::link_endpoints(link)
+          source_type <- get_object_type(b, ends$from)
           link_label <- display_name(link)
-          source_label <- if (!is.null(source_type)) display_name(source_type) else link$from
+          source_label <- if (!is.null(source_type)) display_name(source_type) else ends$from
 
           btn_id <- paste0("traverse_in_", i)
           widgets <- c(widgets, list(
@@ -120,6 +123,7 @@ link_panel_server <- function(id, bundle, selected_type_id, selected_row,
           btn_id <- paste0("traverse_out_", idx)
           shiny::observeEvent(input[[btn_id]], {
             link <- current_links()$outgoing[[idx]]
+            link_to <- ontologySpecR::link_endpoints(link)$to
             source_ids <- get_selected_pk_values(
               bundle(), selected_type_id(), selected_row(),
               selected_rows(), current_data()
@@ -128,9 +132,10 @@ link_panel_server <- function(id, bundle, selected_type_id, selected_row,
               link_filter(list(
                 link_type = link,
                 source_ids = source_ids,
-                direction = "forward"
+                direction = "forward",
+                target_type = link_to
               ))
-              nav_target(link$to)
+              nav_target(link_to)
             }
           }, ignoreInit = TRUE)
         })
@@ -145,6 +150,7 @@ link_panel_server <- function(id, bundle, selected_type_id, selected_row,
           btn_id <- paste0("traverse_in_", idx)
           shiny::observeEvent(input[[btn_id]], {
             link <- current_links()$incoming[[idx]]
+            link_from <- ontologySpecR::link_endpoints(link)$from
             source_ids <- get_selected_pk_values(
               bundle(), selected_type_id(), selected_row(),
               selected_rows(), current_data()
@@ -153,9 +159,10 @@ link_panel_server <- function(id, bundle, selected_type_id, selected_row,
               link_filter(list(
                 link_type = link,
                 source_ids = source_ids,
-                direction = "reverse"
+                direction = "reverse",
+                target_type = link_from
               ))
-              nav_target(link$from)
+              nav_target(link_from)
             }
           }, ignoreInit = TRUE)
         })

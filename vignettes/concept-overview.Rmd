@@ -28,7 +28,6 @@ and exploration views with relationship navigation.
 
 ```{r launch-example, eval=FALSE}
 library(ontologySpecR)
-library(objectSetsR)
 library(actionTypesR)
 library(objectExplorerR)
 library(DBI)
@@ -54,19 +53,18 @@ The ontologySpecR package ships with an aviation demo bundle:
 ```{r setup-demo, eval=TRUE}
 library(ontologySpecR)
 
-# Read the aviation demo bundle
-b <- read_bundle(system.file("examples", "aviation-demo.json",
-                              package = "ontologySpecR"))
+# The shared example bundle (as_bundle() / read_bundle() accept a JSON path too)
+b <- spec_example_bundle()
 
-# The bundle defines 3 object types
-cat("Object types:", paste(vapply(b$objects, function(o) o$id, ""), collapse = ", "), "\n")
-
-# And 3 link types
-cat("Link types:", paste(vapply(b$links, function(l) l$id, ""), collapse = ", "), "\n")
-
-# And 1 action type
-cat("Action types:", paste(vapply(b$actions, function(a) a$id, ""), collapse = ", "), "\n")
+# The accessors return lists named by id
+cat("Object types:", paste(names(bundle_object_types(b)), collapse = ", "), "\n")
+cat("Link types:  ", paste(names(bundle_link_types(b)), collapse = ", "), "\n")
+cat("Action types:", paste(names(bundle_action_types(b)), collapse = ", "), "\n")
 ```
+
+The explorer reads the bundle only through these accessors, after normalising it
+once with `ontologySpecR::as_bundle()`. You can hand `explore_ontology()` a
+bundle object, a list, or the path to a bundle JSON file.
 
 ## Application Layout
 
